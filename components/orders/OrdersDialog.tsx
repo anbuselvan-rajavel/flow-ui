@@ -1,6 +1,9 @@
+// components/orders/OrdersDialog.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Dialog,
@@ -45,15 +48,14 @@ export function OrdersDialog({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const dialog = searchParams.get("dialog"); // "create" or "edit"
-  const id = searchParams.get("id"); // order id for edit
+  const dialog = useMemo(() => searchParams.get("dialog"), [searchParams]);
+  const id = useMemo(() => searchParams.get("id"), [searchParams]);
 
   const isOpen = dialog === "create" || dialog === "edit";
 
-  const order =
-    dialog === "edit"
-      ? orders.find((o) => String(o.id) === id)
-      : null;
+  const order = useMemo(() => {
+    return dialog === "edit" ? orders.find((o) => String(o.id) === id) : null;
+  }, [dialog, orders, id]);
 
   const [form, setForm] = useState({
     customer: "",
@@ -62,7 +64,9 @@ export function OrdersDialog({
     total: "",
   });
 
-  // Sync form with order
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Sync form with order when dialog opens or order changes
   useEffect(() => {
     if (order) {
       setForm({
@@ -71,7 +75,7 @@ export function OrdersDialog({
         status: order.status,
         total: String(order.total),
       });
-    } else {
+    } else if (dialog === "create") {
       setForm({
         customer: "",
         country: "",
@@ -91,30 +95,16 @@ export function OrdersDialog({
     );
   }, [form]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    if (!isOpen) return;
-
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
-      if (e.key === "Enter" && isValid) {
-        e.preventDefault();
-        save();
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, isValid, form]);
-
-  function close() {
+  // Close handler
+  const close = useCallback(() => {
     router.push("/orders");
-  }
+  }, [router]);
 
-  // Save order
-  async function save() {
-    if (!isValid) return;
+  // Save order handler
+  const save = useCallback(async () => {
+    if (!isValid || isSaving) return;
 
+    setIsSaving(true);
     try {
       let data: any;
 
@@ -124,6 +114,11 @@ export function OrdersDialog({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...form, total: Number(form.total) }),
         });
+        
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.details || 'Failed to create order');
+        }
         data = await res.json();
         setOrders((o: any[]) => [...o, data]);
       }
@@ -134,19 +129,45 @@ export function OrdersDialog({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...form, total: Number(form.total) }),
         });
-        if (res.ok) {
-          data = await res.json();
-          setOrders((o: any[]) =>
-            o.map((x) => (x.id === data.id ? data : x))
-          );
+        
+        if (!res.ok) {
+          const error = await res.json();
+          console.error("Update failed:", error);
+          throw new Error(error.details || 'Failed to update order');
         }
+        data = await res.json();
+        setOrders((o: any[]) =>
+          o.map((x) => (x.id === data.id ? data : x))
+        );
       }
 
       close();
     } catch (err) {
       console.error("Failed to save order:", err);
+      alert(err instanceof Error ? err.message : "Failed to save order");
+    } finally {
+      setIsSaving(false);
     }
-  }
+  }, [isValid, isSaving, dialog, form, order, setOrders, close]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
+      if (e.key === "Enter" && isValid && !isSaving) {
+        e.preventDefault();
+        save();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, isValid, isSaving, save, close]);
 
   if (!isOpen) return null;
 
@@ -166,6 +187,7 @@ export function OrdersDialog({
           onChange={(e) =>
             setForm({ ...form, customer: e.target.value })
           }
+          disabled={isSaving}
         />
 
         {/* Country */}
@@ -174,6 +196,7 @@ export function OrdersDialog({
           onValueChange={(val) =>
             setForm({ ...form, country: val })
           }
+          disabled={isSaving}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select country" />
@@ -193,6 +216,7 @@ export function OrdersDialog({
           onValueChange={(val) =>
             setForm({ ...form, status: val })
           }
+          disabled={isSaving}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select status" />
@@ -214,11 +238,22 @@ export function OrdersDialog({
           onChange={(e) =>
             setForm({ ...form, total: e.target.value })
           }
+          disabled={isSaving}
         />
 
         <DialogFooter>
-          <Button disabled={!isValid} onClick={save}>
-            Save
+          <Button 
+            variant="outline" 
+            onClick={close}
+            disabled={isSaving}
+          >
+            Cancel
+          </Button>
+          <Button 
+            disabled={!isValid || isSaving} 
+            onClick={save}
+          >
+            {isSaving ? "Saving..." : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

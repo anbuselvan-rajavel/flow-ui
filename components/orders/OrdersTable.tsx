@@ -1,9 +1,9 @@
+// components/orders/OrdersTable.tsx
 "use client";
 
 import {
   ColumnDef,
   getCoreRowModel,
-  getPaginationRowModel,
   useReactTable,
   flexRender,
 } from "@tanstack/react-table";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "./StatusBadge";
 import { Pencil, Trash2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 
 type Order = {
   id: number;
@@ -31,15 +32,25 @@ export function OrdersTable({ orders, onEdit, onDelete }: OrdersTableProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pageSize = 10;
-  const currentPage = Number(searchParams.get("page") ?? 1);
+  
+  // 🔹 Memoize current page to prevent recalculation
+  const currentPage = useMemo(() => {
+    return Number(searchParams.get("page") ?? 1);
+  }, [searchParams]);
 
-  // 🔹 Slice orders for current page
-  const pagedOrders = orders.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+  // 🔹 Memoize paged orders to prevent infinite loop
+  const pagedOrders = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    const end = currentPage * pageSize;
+    return orders.slice(start, end);
+  }, [orders, currentPage]);
 
-  const columns: ColumnDef<Order>[] = [
+  // 🔹 Memoize total pages
+  const totalPages = useMemo(() => {
+    return Math.ceil(orders.length / pageSize);
+  }, [orders.length]);
+
+  const columns: ColumnDef<Order>[] = useMemo(() => [
     {
       id: "sno",
       header: "S.No",
@@ -76,24 +87,23 @@ export function OrdersTable({ orders, onEdit, onDelete }: OrdersTableProps) {
         </div>
       ),
     },
-  ];
+  ], [currentPage, onEdit, onDelete]);
 
   const table = useReactTable({
-    data: pagedOrders, // 🔹 use sliced data
+    data: pagedOrders,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    manualPagination: true, // 🔹 Add manual pagination
+    pageCount: totalPages,
   });
 
   // 🔹 Update page in URL
   function goToPage(page: number) {
-    if (page < 1) return;
-    const params = new URLSearchParams(searchParams);
+    if (page < 1 || page > totalPages) return;
+    const params = new URLSearchParams(searchParams.toString());
     params.set("page", String(page));
     router.push(`/orders?${params.toString()}`);
   }
-
-  const totalPages = Math.ceil(orders.length / pageSize);
 
   return (
     <>
@@ -111,25 +121,37 @@ export function OrdersTable({ orders, onEdit, onDelete }: OrdersTableProps) {
         </thead>
 
         <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className="border p-2">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
+          {table.getRowModel().rows.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="border p-4 text-center text-muted-foreground">
+                No orders found
+              </td>
             </tr>
-          ))}
+          ) : (
+            table.getRowModel().rows.map((row) => (
+              <tr key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="border p-2">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
 
       {/* 🔽 Pagination */}
       <div className="flex justify-end gap-2 mt-3">
-        <Button variant="outline" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1}>
+        <Button 
+          variant="outline" 
+          onClick={() => goToPage(currentPage - 1)} 
+          disabled={currentPage <= 1}
+        >
           Previous
         </Button>
         <span className="px-2 py-1 text-sm">
-          Page {currentPage} of {totalPages}
+          Page {currentPage} of {totalPages || 1}
         </span>
         <Button
           variant="outline"
