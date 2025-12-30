@@ -9,29 +9,32 @@ export async function PUT(
 ) {
   const body = await req.json();
 
-  // update DB
-  const updatedOrder = {
-    id: Number(params.id),
-    ...body,
-    total: Number(body.total ?? 0),
-    createdAt: new Date().toISOString(),
-  };
-
-  return NextResponse.json(updatedOrder);
-}
-/* export async function PUT(req: Request, { params }: any) {
-  const body = await req.json();
-  const [updated] = await db
+  const result = await db
     .update(orders)
-    .set(body)
+    .set({
+      customer: body.customer,
+      country: body.country,
+      status: body.status,
+      total: Number(body.total),
+    })
     .where(eq(orders.id, Number(params.id)))
     .returning();
 
-  return NextResponse.json(updated);
+  // 🚨 IMPORTANT SAFETY CHECK
+  if (!result.length) {
+    return NextResponse.json(
+      { error: "Order not found" },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json(result[0]); // ✅ ALWAYS JSON
 }
 
-export async function DELETE(_: Request, { params }: any) {
+export async function DELETE(
+  _: Request,
+  { params }: { params: { id: string } }
+) {
   await db.delete(orders).where(eq(orders.id, Number(params.id)));
   return NextResponse.json({ success: true });
 }
-*/

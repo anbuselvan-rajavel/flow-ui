@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "./StatusBadge";
 import { Pencil, Trash2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type Order = {
   id: number;
@@ -27,29 +28,31 @@ interface OrdersTableProps {
 }
 
 export function OrdersTable({ orders, onEdit, onDelete }: OrdersTableProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pageSize = 10;
+  const currentPage = Number(searchParams.get("page") ?? 1);
+
+  // 🔹 Slice orders for current page
+  const pagedOrders = orders.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   const columns: ColumnDef<Order>[] = [
     {
       id: "sno",
       header: "S.No",
-      cell: ({ row }) => row.index + 1,
+      cell: ({ row }) => (currentPage - 1) * pageSize + row.index + 1,
     },
     {
       id: "date",
       header: "Date",
       cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString(),
     },
-    {
-      accessorKey: "customer",
-      header: "Customer",
-    },
-    {
-      accessorKey: "country",
-      header: "Country",
-    },
-    {
-      accessorKey: "total",
-      header: "Total",
-    },
+    { accessorKey: "customer", header: "Customer" },
+    { accessorKey: "country", header: "Country" },
+    { accessorKey: "total", header: "Total" },
     {
       id: "status",
       header: "Status",
@@ -60,14 +63,9 @@ export function OrdersTable({ orders, onEdit, onDelete }: OrdersTableProps) {
       header: "Actions",
       cell: ({ row }) => (
         <div className="flex gap-2">
-          <Button
-            size="icon"
-            variant="outline"
-            onClick={() => onEdit(row.original)}
-          >
+          <Button size="icon" variant="outline" onClick={() => onEdit(row.original)}>
             <Pencil className="h-4 w-4" />
           </Button>
-
           <Button
             size="icon"
             variant="destructive"
@@ -81,11 +79,21 @@ export function OrdersTable({ orders, onEdit, onDelete }: OrdersTableProps) {
   ];
 
   const table = useReactTable({
-    data: orders,
+    data: pagedOrders, // 🔹 use sliced data
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
   });
+
+  // 🔹 Update page in URL
+  function goToPage(page: number) {
+    if (page < 1) return;
+    const params = new URLSearchParams(searchParams);
+    params.set("page", String(page));
+    router.push(`/orders?${params.toString()}`);
+  }
+
+  const totalPages = Math.ceil(orders.length / pageSize);
 
   return (
     <>
@@ -95,10 +103,7 @@ export function OrdersTable({ orders, onEdit, onDelete }: OrdersTableProps) {
             <tr key={hg.id}>
               {hg.headers.map((header) => (
                 <th key={header.id} className="border p-2 text-left">
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext()
-                  )}
+                  {flexRender(header.column.columnDef.header, header.getContext())}
                 </th>
               ))}
             </tr>
@@ -118,18 +123,18 @@ export function OrdersTable({ orders, onEdit, onDelete }: OrdersTableProps) {
         </tbody>
       </table>
 
+      {/* 🔽 Pagination */}
       <div className="flex justify-end gap-2 mt-3">
-        <Button
-          variant="outline"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
-        >
+        <Button variant="outline" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1}>
           Previous
         </Button>
+        <span className="px-2 py-1 text-sm">
+          Page {currentPage} of {totalPages}
+        </span>
         <Button
           variant="outline"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
+          onClick={() => goToPage(currentPage + 1)}
+          disabled={currentPage >= totalPages}
         >
           Next
         </Button>
